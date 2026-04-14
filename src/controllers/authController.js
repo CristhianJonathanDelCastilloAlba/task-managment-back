@@ -312,6 +312,9 @@ const requestPasswordReset = async (req, res) => {
         }
 
         const resetLink = `${process.env.FRONTEND_URL}/#/reset-password?token=${resetToken}`;
+
+        console.log('Link de reset:', resetLink);
+
         const client = createEmailTransporter();
         
         try {
@@ -332,6 +335,7 @@ const requestPasswordReset = async (req, res) => {
                     <p>Si no solicitaste este cambio, ignora este correo.</p>
                 `
             });
+            console.log('Email enviado exitosamente a:', user.email);
         } catch (emailError) {
             console.error('Error enviando email:', emailError.message);
         }
