@@ -19,7 +19,9 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mailtrap": "^4.5.1",
     "multer": "^2.0.2",
+    "nodemailer": "^7.0.13",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
