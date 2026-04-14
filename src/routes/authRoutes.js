@@ -7,6 +7,8 @@ const {
     getProfile,
     updateProfile,
     changePassword,
+    requestPasswordReset,
+    resetPassword,
     logout
 } = require('../controllers/authController');
 const { verifyToken } = require('../middleware/auth');
@@ -14,6 +16,8 @@ const { verifyToken } = require('../middleware/auth');
 router.post('/register', register);
 router.post('/login', login);
 router.post('/refresh-token', refreshToken);
+router.post('/request-password-reset', requestPasswordReset);
+router.post('/reset-password', resetPassword);
 
 router.get('/profile', verifyToken, getProfile);
 router.put('/profile', verifyToken, updateProfile);

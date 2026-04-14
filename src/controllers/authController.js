@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const { supabaseAdmin } = require('../config/supabase');
 
 const generateTokens = (userId) => {
@@ -255,6 +256,149 @@ const logout = async (req, res) => {
     res.json({ message: 'Logout exitoso' });
 };
 
+const createEmailTransporter = () => {
+    return nodemailer.createTransport({
+        host: 'live.smtp.mailtrap.io',
+        port: 587,
+        auth: {
+            user: 'api',
+            pass: process.env.MAILTRAP_TOKEN
+        }
+    });
+};
+
+const requestPasswordReset = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'El email es requerido' });
+        }
+
+        const { data: user, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('id, name, email')
+            .eq('email', email)
+            .eq('is_active', true)
+            .single();
+
+        if (userError || !user) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+
+        if (!user.id) {
+            return res.status(400).json({ error: 'ID de usuario inválido' });
+        }
+
+        const resetToken = jwt.sign(
+            { userId: user.id, type: 'password_reset' },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        const expiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
+
+        const { error: storeError } = await supabaseAdmin
+            .from('password_reset_tokens')
+            .insert([{
+                user_id: user.id,
+                token: resetToken,
+                expires_at: expiresAt
+            }]);
+
+        if (storeError) {
+            console.error('Error almacenando token:', storeError);
+            throw storeError;
+        }
+
+        const resetLink = `${process.env.FRONTEND_URL}/#/reset-password?token=${resetToken}`;
+        const client = createEmailTransporter();
+        
+        try {
+            await client.sendMail({
+                from: 'hello@demomailtrap.co',
+                to: user.email,
+                subject: 'Recupera tu contraseña - Task Management',
+                html: `
+                    <h2>¡Hola ${user.name}!</h2>
+                    <p>Recibimos una solicitud para recuperar tu contraseña.</p>
+                    <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
+                    <a href="${resetLink}" style="background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                        Restablecer Contraseña
+                    </a>
+                    <p>O copia y pega este enlace en tu navegador:</p>
+                    <p>${resetLink}</p>
+                    <p>Este enlace expirará en 1 hora.</p>
+                    <p>Si no solicitaste este cambio, ignora este correo.</p>
+                `
+            });
+        } catch (emailError) {
+            console.error('Error enviando email:', emailError.message);
+        }
+
+        res.json({ 
+            message: 'Se ha enviado un enlace de recuperación a tu correo electrónico'
+        });
+    } catch (error) {
+        console.error('Error solicitando recuperación de contraseña:', error);
+        res.status(500).json({ error: error.message || 'Error al solicitar recuperación de contraseña' });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword) {
+            return res.status(400).json({ error: 'Token y nueva contraseña son requeridos' });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (error) {
+            return res.status(401).json({ error: 'Token inválido o expirado' });
+        }
+
+        if (decoded.type !== 'password_reset') {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+
+        const { data: tokenRecord, error: tokenError } = await supabaseAdmin
+            .from('password_reset_tokens')
+            .select('*')
+            .eq('token', token)
+            .single();
+
+        if (tokenError || !tokenRecord) {
+            return res.status(401).json({ error: 'Token no encontrado o ya fue utilizado' });
+        }
+
+        if (new Date(tokenRecord.expires_at) < new Date()) {
+            return res.status(401).json({ error: 'Token expirado' });
+        }
+
+        const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({ password_hash: newPassword })
+            .eq('id', decoded.userId);
+
+        if (updateError) throw updateError;
+
+        const { error: deleteError } = await supabaseAdmin
+            .from('password_reset_tokens')
+            .delete()
+            .eq('id', tokenRecord.id);
+
+        if (deleteError) throw deleteError;
+
+        res.json({ message: 'Contraseña restablecida exitosamente' });
+    } catch (error) {
+        console.error('Error restableciendo contraseña:', error);
+        res.status(500).json({ error: 'Error al restablecer la contraseña' });
+    }
+};
+
 module.exports = {
     register,
     login,
@@ -262,5 +406,7 @@ module.exports = {
     getProfile,
     updateProfile,
     changePassword,
+    requestPasswordReset,
+    resetPassword,
     logout
 };

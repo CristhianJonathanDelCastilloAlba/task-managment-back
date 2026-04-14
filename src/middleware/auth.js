@@ -41,7 +41,6 @@ const verifyToken = async (req, res, next) => {
 };
 
 const authorize = (...roles) => {
-    console.log('Roles requeridos para esta ruta:', roles);
     return (req, res, next) => {
         if (!req.user) {
             return res.status(401).json({ error: 'Usuario no autenticado' });
